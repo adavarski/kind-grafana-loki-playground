@@ -1,7 +1,7 @@
 ### kind: grafana loki playground
 
 ```
-bootstrap.sh
+$ ./bootstrap.sh
 
 ...
 ==================================================
