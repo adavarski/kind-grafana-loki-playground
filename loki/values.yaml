@@ -1,0 +1,132 @@
+loki:
+  # Should authentication be enabled
+  auth_enabled: false
+  server:
+    http_listen_port: 3100
+    grpc_listen_port: 9095
+
+  storage:
+    bucketNames:
+      chunks: chunks
+      ruler: ruler
+      admin: admin
+    type: s3
+    s3:
+      s3: null
+      endpoint: null
+      region: null
+      secretAccessKey: null
+      accessKeyId: null
+      signatureVersion: null
+      s3ForcePathStyle: false
+      insecure: false
+      http_config: {}
+    filesystem:
+      chunks_directory: /var/loki/chunks
+      rules_directory: /var/loki/rules
+
+  # -- Limits config
+  limits_config:
+    enforce_metric_name: false
+    reject_old_samples: true
+    reject_old_samples_max_age: 168h
+    max_cache_freshness_per_query: 10m
+    split_queries_by_interval: 15m
+
+  memcached:
+    chunk_cache:
+      enabled: true
+      host: ""
+      service: "memcached-client"
+      batch_size: 256
+      parallelism: 10
+    results_cache:
+      enabled: false
+      host: ""
+      service: "memcached-client"
+      timeout: "500ms"
+      default_validity: "12h"
+
+  # -- Check https://grafana.com/docs/loki/latest/configuration/#ruler for more info on configuring ruler
+  rulerConfig: {}
+  # --  Optional compactor configuration
+  compactor: {}
+  # --  Optional analytics configuration
+  analytics: {}
+  # --  Optional querier configuration
+  querier: {}
+  # --  Optional ingester configuration
+  # Ingestion rate limit exceeded for user fake (limit: 2097152 bytes/sec)
+  # while attempting to ingest '5242' lines totaling '1048121' bytes,
+  ingester:
+    chunk_idle_period: 30m
+    chunk_block_size: 262144
+    chunk_encoding: snappy
+    chunk_retain_period: 1m
+    max_transfer_retries: 0
+    wal:
+      dir: /var/loki/wal
+
+
+# Configuration for the write pod(s)
+write:
+  # -- Number of replicas for the write
+  replicas: 2
+  # -- Lifecycle for the write container
+  lifecycle: {}
+
+read:
+  # -- Number of replicas for the read
+  replicas: 2
+
+# Configuration for the backend pod(s)
+backend:
+  # -- Number of replicas for the backend
+  replicas: 1
+
+singleBinary:
+  # -- Number of replicas for the single binary
+  replicas: 0
+
+# Configuration for the memberlist service
+memberlist:
+  service:
+    publishNotReadyAddresses: false
+
+# Configuration for the gateway
+gateway:
+  # -- Specifies whether the gateway should be enabled
+  enabled: true
+  # -- Number of replicas for the gateway
+  replicas: 1
+  # -- Enable logging of 2xx and 3xx HTTP requests
+  verboseLogging: true
+
+tracing:
+  jaegerAgentHost: ""
+
+minio:
+  enabled: true
+  replicas: 1
+  # Minio requires 2 to 16 drives for erasure code (drivesPerNode * replicas)
+  # https://docs.min.io/docs/minio-erasure-code-quickstart-guide
+  # Since we only have 1 replica, that means 2 drives must be used.
+  drivesPerNode: 2
+  rootUser: enterprise-logs
+  rootPassword: supersecret
+  buckets:
+    - name: chunks
+      policy: none
+      purge: false
+    - name: ruler
+      policy: none
+      purge: false
+    - name: admin
+      policy: none
+      purge: false
+  persistence:
+    size: 5Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi

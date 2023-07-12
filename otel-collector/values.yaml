@@ -1,0 +1,127 @@
+mode: deployment  # Where the mode value needs to be set to one of daemonset, deployment or statefulset.
+
+# Note: Experimental
+ # Some care must be taken when using hostNetwork: true, as then OpenTelemetry Collector will listen on all the addresses in the host network namespace.
+hostNetwork: false
+
+# Note: Experimental
+# presets:
+  # The collector can be configured to add Kubernetes metadata to logs, metrics and traces.
+  #  failed to list *v1.ReplicaSet: replicasets.apps is forbidden: User "system:serviceaccount:default:opentelemetry-collector"
+  # kubernetesAttributes:
+  #   enabled: true
+#   hostMetrics:
+#     enabled: true
+  # logsCollection:
+  #   enabled: true
+  #   includeCollectorLogs: true
+
+ports:
+  jaeger-thrift:
+    enabled: true
+  jaeger-grpc:
+    enabled: true
+  metrics:
+    enabled: true
+  otlp:
+    enabled: false
+  otlp-http:
+    enabled: false
+  zipkin:
+    enabled: false
+  loki-http:
+    enabled: true
+    containerPort: 3500
+    servicePort: 3500
+    hostPort: 3500
+
+config:
+  receivers:
+    jaeger:
+      protocols:
+        thrift_http:
+        grpc:
+    loki:
+      protocols:
+        http:
+        grpc:
+      use_incoming_timestamp: true
+
+  processors:
+    batch:
+      send_batch_size: 1000
+      timeout: 10s
+    attributes:
+      actions:
+        - action: insert
+          key: loki.attribute.labels
+          value: container, pod, namespace, job
+        - action: insert
+          key: loki.format
+          value: json # raw, json, logfmt
+          # add tags ['job', 'instance', 'pod', 'namespace']
+
+  # Inject the TraceID as an exemplar in the generated metrics by the spanmetrics connector.
+  connectors:
+    # The spanmetrics connector can be used with Prometheus exporter components.
+    # More: https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/connector/spanmetricsconnector/README.md
+    spanmetrics:
+      namespace: span.metrics
+      # histogram:
+      #   explicit:
+      #     buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms]
+      # dimensions:
+      #   - name: http.method
+      #     default: GET
+      #   - name: http.status_code
+      # dimensions_cache_size: 1000
+      # aggregation_temporality: "AGGREGATION_TEMPORALITY_CUMULATIVE"
+      # metrics_flush_interval: 15s
+
+  exporters:
+    loki:
+      # endpoint: http://loki-loki-distributed-distributor:3100/loki/api/v1/push
+      endpoint: http://loki-write.loki:3100/loki/api/v1/push
+    prometheusremotewrite:
+      # For generation of the target_info metric the incoming spans resource scope attributes must contain service.name and service.instance.id attributes.
+      # The target_info metric will be generated for each resource scope, while OpenTelemetry metric names and attributes will be normalized to be compliant with Prometheus naming rules.
+      target_info:
+        enabled: true
+      # endpoint: https://361398:eyJrIjoiYTNlZTFiOTc2NjA2ODJlOGY1ZGRlNGJkNWMwODRkMDY2M2U2MTE3NiIsIm4iOiJtZXRyaWNzLWtleSIsImlkIjo2MTU4ODJ9@prometheus-prod-01-eu-west-0.grafana.net/api/prom/push
+      endpoint: http://prometheus-kube-prometheus-prometheus.prometheus:9090/api/v1/write
+    jaeger:
+      endpoint: tempo.tempo:14250
+      tls:
+        insecure: true
+
+  service:
+    telemetry:
+      # logs:
+      #   level: "debug"
+      # Prometheus metrics are exposed locally on port 8888 and path /metrics
+      metrics:
+        address: ":8888"
+    pipelines:
+      logs:
+        receivers: [loki]
+        processors: [attributes]
+        exporters: [loki]
+      traces:
+        receivers: [jaeger]
+        processors: [batch]
+        # spanmetrics connector to generate metrics from received spans and export the metrics to the Prometheus Remote Write exporter.
+        exporters: [spanmetrics,jaeger]
+      metrics:
+        receivers: [spanmetrics]
+        processors: [batch]
+        exporters: [prometheusremotewrite] # send to prometheus(with exemplars)
+
+  #   extensions: [health_check, pprof, zpages]
+  #
+  # extensions:
+  #   health_check:
+  #     endpoint: 0.0.0.0:13133
+  #   pprof:
+  #     endpoint: 0.0.0.0:1777
+  #   zpages:
+  #     endpoint: 0.0.0.0:55679

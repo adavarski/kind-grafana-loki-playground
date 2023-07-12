@@ -1,0 +1,182 @@
+global:
+  rbac:
+    ## Create ClusterRoles that extend the existing view, edit and admin ClusterRoles to interact with prometheus-operator CRDs
+    ## Ref: https://kubernetes.io/docs/reference/access-authn-authz/rbac/#aggregated-clusterroles
+    createAggregateClusterRoles: true
+
+prometheusOperator:
+  # Define Log Format
+  # Use logfmt (default) or json logging
+  logFormat: json
+
+  ## Decrease log verbosity to errors only
+  logLevel: debug
+
+  namespaces: 
+    releaseNamespace: true
+    additional:
+    - kube-system
+    - default
+    - demo
+    - sloth
+    - loki
+    - otel
+    - tempo
+
+alertmanager:
+
+  alertmanagerSpec:
+    ## Define Log Format
+    # Use logfmt (default) or json logging
+    logFormat: json
+
+    ## Log level for Alertmanager to be configured with.
+    ##
+    logLevel: info
+
+grafana:
+  sidecar:
+    datasources:
+      exemplarTraceIdDestinations:
+        datasourceUid: tempo
+        traceIdLabelName: traceID
+
+  additionalDataSources:
+  - name: Tempo
+    access: proxy
+    basicAuth: false
+    jsonData:
+      tracesToLogsV2:
+        # Field with an internal link pointing to a logs data source in Grafana.
+        # datasourceUid value must match the uid value of the logs data source.
+        datasourceUid: 'loki'
+        spanStartTimeShift: '1h'
+        spanEndTimeShift: '-1h'
+        tags: ['job', 'instance', 'pod', 'namespace']
+        filterByTraceID: false
+        filterBySpanID: false
+        customQuery: true
+        query: '{exporter="OTLP"} |="$${__span.traceId}"'
+        # query: '{container="foo"} |="$${__span.traceId}"'
+        # query: '{{exporter="OTLP"} | json | line_format "{{.body}}" | json | trace_id="$${__span.traceId}" | span_id="$${__span.spanId}"}'
+
+      tracesToMetrics:
+        datasourceUid: 'prometheus'
+        spanStartTimeShift: '1h'
+        spanEndTimeShift: '-1h'
+        tags: [{ key: 'service.name', value: 'service' }, { key: 'job' }]
+        queries:
+          - name: 'Sample query'
+            query: 'sum(rate(traces_spanmetrics_latency_bucket{$__tags}[5m]))'
+      serviceMap:
+        datasourceUid: 'prometheus'
+      nodeGraph:
+        enabled: true
+      search:
+        hide: false
+      lokiSearch:
+        datasourceUid: 'loki'
+      spanBar:
+        type: 'Tag'
+        tag: 'http.path'
+    orgId: 1
+    type: tempo
+    # url: http://tempo-query-frontend.default:3100
+    url: http://tempo.tempo:3100
+    version: 1
+    uid: tempo
+
+  # https://grafana.com/docs/grafana/latest/datasources/loki/
+  - name: Loki
+    orgId: 1
+    type: loki
+    uid: loki
+    access: proxy
+    url: http://loki-gateway.loki
+    # url: http://loki-loki-distributed-gateway
+    # url: http://loki-loki-distributed-querier-frontend.default:3100
+    basicAuth: false
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        # Field with internal link pointing to data source in Grafana.
+        # Right now, Grafana supports only Jaeger and Zipkin data sources as link targets.
+        # datasourceUid value can be anything, but it should be unique across all defined data source uids.
+        - datasourceUid: tempo
+          matcherRegex: "traceID=(\\w+)"
+          name: traceID # TODO: test TraceID
+          # url will be interpreted as query for the datasource
+          url: '$${__value.raw}'
+
+prometheus:
+
+  prometheusSpec:
+
+    ## How long to retain metrics
+    ##
+    retention: 10d
+    
+    ignoreNamespaceSelectors: true
+
+    ruleSelectorNilUsesHelmValues: false
+
+    serviceMonitorSelectorNilUsesHelmValues: false
+
+    probeSelectorNilUsesHelmValues: false
+
+    podMonitorSelectorNilUsesHelmValues: false
+
+    ## Log level for Prometheus be configured in
+    ##
+    logLevel: debug
+
+    ## Log format for Prometheus be configured in
+    ##
+    logFormat: json
+
+    ## Exemplars related settings that are runtime reloadable.
+    ## It requires to enable the exemplar storage feature to be effective.
+    # TODO: Check this
+    exemplars: ""
+      ## Maximum number of exemplars stored in memory for all series.
+      ## If not set, Prometheus uses its default value.
+      ## A value of zero or less than zero disables the storage.
+      # maxSize: 100000
+
+    # EnableFeatures API enables access to Prometheus disabled features.
+    # ref: https://prometheus.io/docs/prometheus/latest/disabled_features/
+    enableFeatures:
+      - exemplar-storage
+      - remote-write-receiver
+      # - new-service-discovery-manager
+
+    ## The remote_write spec configuration for Prometheus.
+    ## ref: https://github.com/prometheus-operator/prometheus-operator/blob/main/Documentation/api.md#remotewritespec
+    remoteWrite: []
+      # - url: "prometheus-remote"
+        # https://grafana.com/docs/grafana-cloud/kubernetes-monitoring/other-methods/prometheus/remote_write_operator/#create-a-kubernetes-secret-to-store-grafana-cloud-credentials
+        # basicAuth:
+        #   username:
+        #     name: kubepromsecret
+        #     key: username
+        #   password:
+        #     name: kubepromsecret
+        #     key: password
+    # - url: http://remote1/push
+    ## additionalRemoteWrite is appended to remoteWrite
+
+    ## Enable/Disable Grafana dashboards provisioning for prometheus remote write feature
+    remoteWriteDashboards: true
+
+    additionalScrapeConfigs:
+    - job_name: kubecost
+      honor_labels: true
+      scrape_interval: 1m
+      scrape_timeout: 10s
+      metrics_path: /metrics
+      scheme: http
+      dns_sd_configs:
+      - names:
+        - kubecost-cost-analyzer.kubecost
+        type: 'A'
+        port: 9005
