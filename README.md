@@ -1,4 +1,4 @@
-### kind: grafana loki playground
+### KinD: grafana loki playground
 
 ```
 $ ./bootstrap.sh
