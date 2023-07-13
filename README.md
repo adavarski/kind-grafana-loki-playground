@@ -1,4 +1,4 @@
-### KinD: grafana loki playground
+### KinD: grafana loki tempo playground
 
 ```
 $ ./bootstrap.sh
