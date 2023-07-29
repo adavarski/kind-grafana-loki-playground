@@ -13,3 +13,4 @@ prom-operator
 
 ```
 
+Credits: https://github.com/bruno-notifi/kind-loki-tempo-demo
